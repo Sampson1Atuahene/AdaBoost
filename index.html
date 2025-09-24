@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AdaBoost Practice — Synthetic Dataset</title>
+<style>
+  :root{
+    --bg:#0f172a;       /* slate-900 */
+    --panel:#111827;    /* gray-900 */
+    --muted:#9ca3af;    /* gray-400 */
+    --text:#e5e7eb;     /* gray-200 */
+    --accent:#22c55e;   /* green-500 */
+    --accent-2:#16a34a; /* green-600 */
+    --warn:#f59e0b;     /* amber-500 */
+    --radius:14px;
+    --shadow:0 14px 40px rgba(2,6,23,.35);
+    --line:#1f2937;     /* gray-800 */
+  }
+  html,body{height:100%}
+  body{
+    margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue",
+    Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji"; background:var(--bg); color:var(--text);
+  }
+  .wrap{max-width:1100px; margin:32px auto; padding:0 16px;}
+  h1{font-size:28px; margin:0 0 6px 0;}
+  .sub{color:var(--muted); font-size:14px; margin-bottom:18px}
+
+  /* Controls */
+  .controls{display:flex; gap:12px; margin:10px 0 18px 0;}
+  .btn{
+    background:var(--accent); border:none; color:#052e16; font-weight:600; padding:10px 14px;
+    border-radius:12px; cursor:pointer; box-shadow:var(--shadow); transition:.15s transform ease;
+  }
+  .btn:hover{transform:translateY(-1px); background:var(--accent-2); color:#052e16}
+  .btn.secondary{background:#334155; color:#e2e8f0;}
+  .btn.secondary:hover{background:#475569}
+
+  /* Card / table */
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:14px 16px;
+  }
+  table{width:100%; border-collapse:collapse; font-size:14px}
+  thead th{
+    text-align:left; font-weight:700; padding:10px 8px; border-bottom:1px solid var(--line);
+    color:#f3f4f6;
+  }
+  tbody td{
+    padding:10px 8px; border-bottom:1px dashed var(--line); color:#e5e7eb;
+  }
+  tbody tr:last-child td{border-bottom:none}
+  .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;}
+  .foot{
+    padding:8px 6px 4px; color:var(--muted); font-size:13px;
+  }
+
+  /* Exercise block */
+  .exercise{margin-top:18px}
+  .ex-header{
+    font-weight:700; margin-bottom:6px;
+  }
+  .ex-steps{color:#e5e7eb; line-height:1.55; margin:0 0 10px 18px}
+  .reveal{
+    display:inline-flex; align-items:center; gap:8px; background:#064e3b; color:#d1fae5;
+    padding:10px 12px; border-radius:12px; border:1px solid #065f46; cursor:pointer; font-weight:700;
+  }
+  .answer{
+    margin-top:10px; padding:12px 14px; background:#0b1220; border:1px solid var(--line);
+    border-radius:12px; font-size:14px; display:none; white-space:pre-wrap;
+  }
+
+  /* Small helper */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div>
+        <h1>AdaBoost Practice — Synthetic Dataset</h1>
+        <div class="sub">Front-end only • No frameworks</div>
+      </div>
+      <div class="controls">
+        <button id="regen" class="btn">Regenerate dataset</button>
+        <button id="download" class="btn">Download CSV</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <table id="data-table" class="mono">
+        <thead>
+          <tr><th style="width:56px">#</th><th>f1</th><th>f2</th><th>y</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div id="summary" class="foot mono"></div>
+    </div>
+
+    <div class="card exercise">
+      <div class="ex-header">Exercise: Train a decision stump</div>
+      <ol class="ex-steps">
+        <li>Download the dataset as CSV.</li>
+        <li>In Python, train a decision stump on this dataset using scikit-learn (<span class="mono">DecisionTreeClassifier(max_depth=1, random_state=1)</span>).</li>
+        <li>Compute the model’s training error on the dataset.</li>
+        <li>From that error, determine the decision stump’s “say”.</li>
+      </ol>
+      <button id="reveal" class="reveal">Reveal answer</button>
+      <div id="answer" class="answer mono"></div>
+    </div>
+  </div>
+
+<script>
+/* ---------- Utilities ---------- */
+const fmt = (x) => (Math.abs(x) >= 1000 ? x.toFixed(0) : x.toFixed(3));
+function downloadText(filename, text){
+  const blob = new Blob([text], {type: "text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ---------- Synthetic data ---------- */
+/* Two-gaussian with circular decision boundary + small noise. */
+function makeData(n=150, seed=null){
+  if(seed !== null){
+    // simple LCG for reproducibility
+    let s = seed >>> 0;
+    Math.random = function(){
+      s = (1664525 * s + 1013904223) >>> 0;
+      return (s & 0xfffffff) / 0xfffffff;
+    }
+  }
+  const f1=[], f2=[], y=[];
+  for(let i=0;i<n;i++){
+    const x = randn()*1.1, z = randn()*1.1;
+    const r = x*x + z*z + 0.15*randn();
+    const label = (r < 1.4) ? 1 : 0;   // roughly balanced
+    f1.push(x); f2.push(z); y.push(label);
+  }
+  return {f1, f2, y};
+}
+function randn(){
+  // Box–Muller
+  let u=0, v=0;
+  while(u===0) u=Math.random(); while(v===0) v=Math.random();
+  return Math.sqrt(-2.0*Math.log(u)) * Math.cos(2*Math.PI*v);
+}
+
+/* ---------- Render table ---------- */
+function renderTable(data, maxRows=15){
+  const tbody = document.querySelector("#data-table tbody");
+  tbody.innerHTML = "";
+  const n = data.y.length;
+  const k = Math.min(maxRows, n);
+  for(let i=0;i<k;i++){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${i+1}</td>
+      <td>${fmt(data.f1[i])}</td>
+      <td>${fmt(data.f2[i])}</td>
+      <td>${data.y[i]}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+  const c0 = data.y.filter(v=>v===0).length;
+  const c1 = n - c0;
+  document.getElementById("summary").textContent =
+    `Rows: ${n} • Features: 2 • Class 0: ${c0} • Class 1: ${c1}`;
+}
+
+/* ---------- Decision stump trainer (front-end) ---------- */
+/* Finds the best (feature, threshold, polarity) minimizing training error.
+   Polarity means prediction on the <= side (0 or 1). */
+function trainStump(data){
+  const X = [data.f1, data.f2]; // 2 features
+  const y = data.y;
+  const n = y.length;
+  let best = {feat:0, thr:0, pol:0, err:1};
+
+  for(let j=0;j<2;j++){
+    // Candidate thresholds: midpoints of sorted unique values
+    const xs = [...X[j]];
+    const uniq = Array.from(new Set(xs)).sort((a,b)=>a-b);
+    const thrCands = [];
+    for(let i=0;i<uniq.length-1;i++){
+      thrCands.push((uniq[i]+uniq[i+1])/2);
+    }
+    if(uniq.length) thrCands.push(uniq[0]-1e-6, uniq[uniq.length-1]+1e-6);
+
+    for(const thr of thrCands){
+      for(const pol of [0,1]){ // predict pol on <= side
+        let wrong=0;
+        for(let i=0;i<n;i++){
+          const pred = (X[j][i] <= thr) ? pol : (1-pol);
+          if(pred !== y[i]) wrong++;
+        }
+        const err = wrong/n;
+        if(err < best.err){
+          best = {feat:j, thr, pol, err};
+        }
+      }
+    }
+  }
+  // "Say" (alpha) like AdaBoost.M1 from error
+  const eps = Math.max(best.err, 1e-12);
+  const say = 0.5 * Math.log((1-eps)/eps);
+  return {...best, say};
+}
+
+/* ---------- CSV exporter ---------- */
+function toCSV(data){
+  const lines = ["f1,f2,y"];
+  for(let i=0;i<data.y.length;i++){
+    lines.push(`${data.f1[i]},${data.f2[i]},${data.y[i]}`);
+  }
+  return lines.join("\n");
+}
+
+/* ---------- Wire up ---------- */
+let DATA = makeData(150); // default size
+renderTable(DATA);
+
+document.getElementById("regen").addEventListener("click", ()=>{
+  DATA = makeData(150);
+  renderTable(DATA);
+  document.getElementById("answer").style.display = "none";
+});
+
+document.getElementById("download").addEventListener("click", ()=>{
+  downloadText("synthetic_dataset.csv", toCSV(DATA));
+});
+
+document.getElementById("reveal").addEventListener("click", ()=>{
+  const s = trainStump(DATA);
+  const feat = s.feat===0 ? "f1" : "f2";
+  const left = s.pol;           // prediction on <= side
+  const right = 1-left;
+  const msg =
+    `Say: ${fmt(s.say)}\n`+
+    `Training error: ${(s.err*100).toFixed(1)}% (${Math.round(s.err*DATA.y.length)}/${DATA.y.length})\n`+
+    `Stump: ${feat} ≤ ${fmt(s.thr)} → ${left}, else ${right}`;
+  const box = document.getElementById("answer");
+  box.textContent = msg;
+  box.style.display = "block";
+});
+</script>
+</body>
+</html>
